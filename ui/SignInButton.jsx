@@ -14,12 +14,14 @@ const SignInButton = ({}) => {
       await signIn('google');
     } catch (error) {
       toast.error('登录失败');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
     <Button onClick={signInWithGoogle} isLoading={isLoading}>
-      Sign in with Google
+      使用Google账号登录
     </Button>
   );
 };

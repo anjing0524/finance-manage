@@ -28,7 +28,7 @@ const DashBoardNavMenu = () => {
                 对存储过的数据进行管理.
               </ListItem>
               <ListItem title="财务管理" href="/dashboard/finance-manage">
-                对个人财物进行管理.
+                对个人财务进行管理.
               </ListItem>
               <ListItem title="Releases" href="/dashboard/releases">
                 版本管理&发布日志.
