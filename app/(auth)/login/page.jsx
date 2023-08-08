@@ -1,4 +1,4 @@
-import SignInButton from '@/ui/SignInButton';
+import SignInButton from '@/ui/SignInGithubButton';
 import { UserLoginForm } from '@/ui/UserLoginForm';
 
 export default function Page() {

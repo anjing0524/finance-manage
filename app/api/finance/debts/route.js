@@ -34,6 +34,7 @@ export async function POST(req) {
         borrowDate,
         installment,
         repaymentMode,
+        userId: session.user.id,
         repayments: {
           createMany: {
             data: repayments.map(({ date, amount }) => ({

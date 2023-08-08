@@ -7,7 +7,7 @@ const mockData = [
   {
     name: '1',
     email: '1@example.com',
-    pwd: bcrypt.hashSync('123', bcrypt.genSaltSync()),
+    pwd: bcrypt.hashSync('zheshiyigefuzamima', bcrypt.genSaltSync()),
   },
 ];
 

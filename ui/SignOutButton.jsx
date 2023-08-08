@@ -26,7 +26,7 @@ const SignOutButton = ({}) => {
 
   return (
     <Button onClick={signUserOut} isLoading={isLoading}>
-      注销
+      Sign Out
     </Button>
   );
 };
