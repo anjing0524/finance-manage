@@ -17,6 +17,7 @@ const nextConfig = {
         crateDirectory: path.resolve(__dirname, './finance-cal'), // path to your Rust crate
         outDir: path.resolve(__dirname, './finance-cal/pkg'), // output directory
         forceMode: 'production',
+        forceWatch: false,
       }),
     );
 

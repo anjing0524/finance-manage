@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
+import { range } from 'lodash';
+import { useEffect, useRef } from 'react';
 
 const testData = [
   ['2013/1/24', 2320.26, 2320.26, 2287.3, 2362.94],
@@ -91,6 +92,8 @@ const testData = [
   ['2013/6/6', 2264.43, 2242.11, 2240.07, 2266.69],
   ['2013/6/7', 2242.26, 2210.9, 2205.07, 2250.63],
   ['2013/6/13', 2190.1, 2148.35, 2126.22, 2190.1],
+  ['2013/6/6', 2264.43, 2242.11, 2240.07, 2266.69],
+  ['2013/6/7', 2242.26, 2210.9, 2000, 2250.63],
 ];
 
 function DrawTest() {
@@ -101,27 +104,37 @@ function DrawTest() {
     lowest: v[3],
     highest: v[4],
   }));
-  console.log(klineData);
+  const timeRef = useRef(null);
+
   useEffect(() => {
     import('@/finance-cal/pkg').then((module) => {
-      console.time('draw');
-      try {
+      if (timeRef.current) clearTimeout(timeRef.current);
+      timeRef.current = setTimeout(() => {
+        console.time('k');
         module.draw_kline('kline', klineData);
-      } catch (error) {
-        console.log(error);
-      }
-      console.timeEnd('draw');
+
+        for (let index = 0; index < 100; index++) {
+          module.draw_kline(`kline${index}`, klineData);
+        }
+
+        console.timeEnd('k');
+      }, 0);
       module.draw_test('test-drow');
     });
   }, [klineData]);
   return (
-    <div className="flex w-full items-start ">
+    <div className="flex w-full items-start">
       <div>
         <canvas id="test-drow" width={400} height={400}></canvas>
       </div>
-      <div>
-        <canvas id="kline" width={400} height={400}></canvas>
+      <div className="bg-white px-8 py-4">
+        <canvas id="kline" width={800} height={400}></canvas>
       </div>
+      {range(0, 100).map((i) => (
+        <div className="bg-white px-8 py-4" key={i}>
+          <canvas id={`kline${i}`} width={800} height={400}></canvas>
+        </div>
+      ))}
     </div>
   );
 }

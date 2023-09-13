@@ -22,19 +22,16 @@ mod canvas {
 
     #[wasm_bindgen]
     pub fn get_canvas(id: &str) -> HtmlCanvasElement {
-        console_error_panic_hook::set_once();
         getElementById(id)
     }
 
     #[wasm_bindgen]
     pub fn get_window() -> web_sys::Window {
-        console_error_panic_hook::set_once();
         window().expect("no global `window` exists")
     }
 
     #[wasm_bindgen]
     pub fn get_context(canvas: &HtmlCanvasElement) -> Result<CanvasRenderingContext2d, JsValue> {
-        console_error_panic_hook::set_once();
         let context = canvas
             .get_context("2d")?
             .ok_or(JsValue::from_str("Unable to get context"))?;
@@ -68,9 +65,9 @@ mod canvas {
 
     #[wasm_bindgen]
     pub fn draw_kline(id: &str, data: JsValue) -> Result<(), JsValue> {
+        console_error_panic_hook::set_once();
         let canvas = get_canvas(id);
         let context = get_context(&canvas)?;
-
         let data: Result<Vec<KlineItem>, _> = from_value(data);
         let data: Vec<KlineItem> = match data {
             Ok(value) => value,
@@ -79,23 +76,105 @@ mod canvas {
             }
         };
 
-        // 获取Canvas元素的高度
-        let canvas_height = canvas.height() as f64;
-        let canvas_width = canvas.width() as f64;
-        // 计算K线图的横向间隔
-        let kline_width = canvas_width as f64 / data.len() as f64;
-        let max_high = data
-            .iter()
-            .map(|item| item.highest)
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-        let min_low = data
-            .iter()
-            .map(|item| item.lowest)
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-        let scale = canvas_height / (max_high - min_low);
-        println!("max:{:?},min:{:?}", max_high, min_low);
+        // 获取Canvas元素的高度，上下留白20px，还需考虑标题区域、滚动区域高度
+        let offset_y = 20.0;
+        let legend_h = 40.0;
+        let scroll_bar_h = 40.0;
+        let canvas_height = canvas.height() as f64 - offset_y - legend_h - scroll_bar_h;
+        // 获取Canvas元素宽度，左侧留白40px
+        let offset_x = 40.0;
+        let canvas_width = canvas.width() as f64 - offset_x;
+        let padding = 5;
+        // 计算K线图的横向间隔 左右各留5px空白区域
+        let kline_width = (canvas_width - (padding * 2) as f64) / data.len() as f64;
+        // 计算最大的最高价和最小的最低价
+        let (max_high, min_low) =
+            data.iter()
+                .fold((f64::NEG_INFINITY, f64::INFINITY), |(max, min), item| {
+                    let max_high = max.max(item.highest);
+                    let min_low = min.min(item.lowest);
+                    (max_high, min_low)
+                });
+        // 计算差值
+        let difference = max_high - min_low;
+        // 计算高度分布系数,单位数字所占像素点
+        let scale = canvas_height / difference;
+        // height 是差值 需要加上最低值的预设值
+        let canvas_height_with_min = canvas_height + legend_h + min_low * scale;
+
+        // 绘制标题
+        context.set_font("14px Arial");
+        context.set_fill_style(&JsValue::from_str("black"));
+        let _ = context.fill_text("K线数据展示", 0.0, legend_h / 3.0);
+
+        // 绘制坐标系
+        context.begin_path();
+        context.move_to(offset_x, legend_h);
+        context.line_to(offset_x, canvas_height + legend_h);
+        context.line_to(offset_x + canvas_width, canvas_height + legend_h);
+        context.set_stroke_style(&JsValue::from_str("rgb(0, 0, 0,1)"));
+        context.stroke();
+        context.close_path();
+
+        // 绘制坐标系间隔
+        let x_axis_tick_count = 10; // 假设间隔为10
+        let x_axis_tick_interval = canvas_width / x_axis_tick_count as f64;
+        let y_axis_tick_count = 10;
+        let y_axis_tick_interval = canvas_height / y_axis_tick_count as f64;
+        // 绘制X坐标间隔
+        for i in 0..x_axis_tick_count {
+            let x = i as f64 * x_axis_tick_interval + offset_x;
+            context.begin_path();
+            context.move_to(x, canvas_height + legend_h);
+            context.line_to(x, canvas_height + legend_h + 4.0);
+            context.set_stroke_style(&JsValue::from_str("rgb(0, 0, 0,1)"));
+            context.stroke();
+            context.close_path();
+            // 绘制文本
+            context.set_font("10px Arial");
+            context.set_fill_style(&JsValue::from_str("black"));
+            let mut idx = data.len() / x_axis_tick_count * i;
+            if idx != 0 {
+                idx -= 1;
+            }
+
+            // 一个默认值
+            let default = &KlineItem {
+                date: "日期".to_string(),
+                open: 0.0,
+                close: 0.0,
+                lowest: 0.0,
+                highest: 0.0,
+            };
+            // 取对应tick的值
+            let item = match data.get(idx) {
+                Some(v) => v,
+                None => default,
+            };
+            let _ = context.fill_text(
+                &item.date,
+                x - 20.0,
+                canvas_height + legend_h + offset_y / 2.0,
+            );
+        }
+
+        // 绘制Y坐标间隔
+        for i in 0..=y_axis_tick_count {
+            let y = i as f64 * y_axis_tick_interval;
+            context.begin_path();
+            context.move_to(offset_x, canvas_height + legend_h - y);
+            context.line_to(offset_x - 4.0, canvas_height + legend_h - y);
+            context.set_stroke_style(&JsValue::from_str("rgb(0, 0, 0,1)"));
+            context.stroke();
+            context.close_path();
+            // 绘制文字
+            context.set_font("10px Arial");
+            context.set_fill_style(&JsValue::from_str("black"));
+            let text =
+                difference / y_axis_tick_count as f64 * (y_axis_tick_count - i) as f64 + min_low;
+            let text = format!("{:.2}", text);
+            let _ = context.fill_text(&text, 0.0, y + legend_h + 4.0);
+        }
 
         // 根据数据绘制K线图
         for (
@@ -110,10 +189,10 @@ mod canvas {
         ) in data.iter().enumerate()
         {
             // 计算 x 坐标
-            let x = index as f64 * kline_width;
+            let x = index as f64 * kline_width + offset_x + padding as f64;
             // 计算 K 线的高度和 y 坐标，根据Canvas元素的高度进行缩放
             let height = (highest - lowest) * scale;
-            let y = canvas_height - highest * scale;
+            let y = canvas_height_with_min - highest * scale;
 
             if close >= open {
                 // 开盘价小于等于收盘价，绘制红色矩形
@@ -126,7 +205,7 @@ mod canvas {
                 context.stroke();
                 // 绘制矩形
                 context.set_fill_style(&red);
-                let rect_y = canvas_height - close * scale;
+                let rect_y: f64 = canvas_height_with_min - close * scale;
                 let rect_height = (close - open) * scale;
                 context.fill_rect(x, rect_y, kline_width, rect_height);
             } else {
@@ -140,7 +219,7 @@ mod canvas {
                 context.stroke();
                 // 绘制矩形
                 context.set_fill_style(&green);
-                let rect_y = canvas_height - open * scale;
+                let rect_y = canvas_height_with_min - open * scale;
                 let rect_height = (open - close) * scale;
                 context.fill_rect(x, rect_y, kline_width, rect_height);
             }
