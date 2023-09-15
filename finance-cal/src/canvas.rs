@@ -1,9 +1,11 @@
 mod canvas {
+    use std::rc::Rc;
+
     use console_error_panic_hook;
     use serde::{Deserialize, Serialize};
     use serde_wasm_bindgen::from_value;
     use wasm_bindgen::prelude::*;
-    use web_sys::{window, CanvasRenderingContext2d, HtmlCanvasElement};
+    use web_sys::{window, CanvasRenderingContext2d, HtmlCanvasElement, MouseEvent};
 
     #[wasm_bindgen]
     extern "C" {
@@ -19,15 +21,16 @@ mod canvas {
         #[wasm_bindgen(js_namespace = Math)]
         fn min(a: f64, b: f64) -> f64;
     }
-
+    /// 获取指定 id 的 canvas 元素
     #[wasm_bindgen]
     pub fn get_canvas(id: &str) -> HtmlCanvasElement {
         getElementById(id)
     }
 
+    /// 获取全局 window 对象
     #[wasm_bindgen]
-    pub fn get_window() -> web_sys::Window {
-        window().expect("no global `window` exists")
+    pub fn get_window() -> Result<web_sys::Window, JsValue> {
+        window().ok_or(JsValue::from_str("no global `window` exists"))
     }
 
     #[wasm_bindgen]
@@ -67,23 +70,18 @@ mod canvas {
     pub fn draw_kline(id: &str, data: JsValue) -> Result<(), JsValue> {
         console_error_panic_hook::set_once();
         let canvas = get_canvas(id);
-        let context = get_context(&canvas)?;
+        let rc_context = Rc::new(get_context(&canvas)?);
         let data: Result<Vec<KlineItem>, _> = from_value(data);
-        let data: Vec<KlineItem> = match data {
-            Ok(value) => value,
-            Err(err) => {
-                return Err(JsValue::from(err));
-            }
-        };
+        let data = data.map_err(|err| JsValue::from(err))?;
 
         // 获取Canvas元素的高度，上下留白20px，还需考虑标题区域、滚动区域高度
-        let offset_y = 20.0;
+        let offset_y_bottom = 40.0;
         let legend_h = 40.0;
         let scroll_bar_h = 40.0;
-        let canvas_height = canvas.height() as f64 - offset_y - legend_h - scroll_bar_h;
+        let canvas_height = canvas.height() as f64 - offset_y_bottom - legend_h - scroll_bar_h;
         // 获取Canvas元素宽度，左侧留白40px
-        let offset_x = 40.0;
-        let canvas_width = canvas.width() as f64 - offset_x;
+        let offset_x_left = 40.0;
+        let canvas_width = canvas.width() as f64 - offset_x_left;
         let padding = 5;
         // 计算K线图的横向间隔 左右各留5px空白区域
         let kline_width = (canvas_width - (padding * 2) as f64) / data.len() as f64;
@@ -95,6 +93,9 @@ mod canvas {
                     let min_low = min.min(item.lowest);
                     (max_high, min_low)
                 });
+        // 向上或向下取值（可选择开启）
+        // let max_high = (max_high / 100.0).ceil() * 100.0;
+        // let min_low = (min_low / 100.0).floor() * 100.0;
         // 计算差值
         let difference = max_high - min_low;
         // 计算高度分布系数,单位数字所占像素点
@@ -102,6 +103,7 @@ mod canvas {
         // height 是差值 需要加上最低值的预设值
         let canvas_height_with_min = canvas_height + legend_h + min_low * scale;
 
+        let context = rc_context.clone();
         // 绘制标题
         context.set_font("14px Arial");
         context.set_fill_style(&JsValue::from_str("black"));
@@ -109,9 +111,9 @@ mod canvas {
 
         // 绘制坐标系
         context.begin_path();
-        context.move_to(offset_x, legend_h);
-        context.line_to(offset_x, canvas_height + legend_h);
-        context.line_to(offset_x + canvas_width, canvas_height + legend_h);
+        context.move_to(offset_x_left, legend_h);
+        context.line_to(offset_x_left, canvas_height + legend_h);
+        context.line_to(offset_x_left + canvas_width, canvas_height + legend_h);
         context.set_stroke_style(&JsValue::from_str("rgb(0, 0, 0,1)"));
         context.stroke();
         context.close_path();
@@ -123,7 +125,7 @@ mod canvas {
         let y_axis_tick_interval = canvas_height / y_axis_tick_count as f64;
         // 绘制X坐标间隔
         for i in 0..x_axis_tick_count {
-            let x = i as f64 * x_axis_tick_interval + offset_x;
+            let x = i as f64 * x_axis_tick_interval + offset_x_left;
             context.begin_path();
             context.move_to(x, canvas_height + legend_h);
             context.line_to(x, canvas_height + legend_h + 4.0);
@@ -153,8 +155,8 @@ mod canvas {
             };
             let _ = context.fill_text(
                 &item.date,
-                x - 20.0,
-                canvas_height + legend_h + offset_y / 2.0,
+                x - 25.0,
+                canvas_height + legend_h + offset_y_bottom / 2.0,
             );
         }
 
@@ -162,8 +164,8 @@ mod canvas {
         for i in 0..=y_axis_tick_count {
             let y = i as f64 * y_axis_tick_interval;
             context.begin_path();
-            context.move_to(offset_x, canvas_height + legend_h - y);
-            context.line_to(offset_x - 4.0, canvas_height + legend_h - y);
+            context.move_to(offset_x_left, canvas_height + legend_h - y);
+            context.line_to(offset_x_left - 4.0, canvas_height + legend_h - y);
             context.set_stroke_style(&JsValue::from_str("rgb(0, 0, 0,1)"));
             context.stroke();
             context.close_path();
@@ -189,7 +191,7 @@ mod canvas {
         ) in data.iter().enumerate()
         {
             // 计算 x 坐标
-            let x = index as f64 * kline_width + offset_x + padding as f64;
+            let x = index as f64 * kline_width + offset_x_left + padding as f64;
             // 计算 K 线的高度和 y 坐标，根据Canvas元素的高度进行缩放
             let height = (highest - lowest) * scale;
             let y = canvas_height_with_min - highest * scale;
@@ -224,7 +226,47 @@ mod canvas {
                 context.fill_rect(x, rect_y, kline_width, rect_height);
             }
         }
+        // K线绘制完成 保存当前栈
+        context.save();
 
+        // 增加鼠标over事件
+        let move_context = rc_context.clone();
+        let mousemove_closure = Closure::wrap(Box::new(move |event: MouseEvent| {
+            // 获取鼠标光标的x和y坐标
+            let x = event.client_x();
+            let y = event.client_y();
+            // 为了调试，记录坐标
+            log(&format!("鼠标在: ({}, {})", x, y));
+            move_context.restore();
+            // TODO 根据 x y 计算下标位置
+            // TODO 根据下标获取数据
+            // TODO 重新绘制K线数据
+            // 使用contex绘制悬浮效果展示K线数据
+        }) as Box<dyn FnMut(_)>);
+
+        canvas.add_event_listener_with_callback(
+            "mousemove",
+            mousemove_closure.as_ref().unchecked_ref(),
+        )?;
+        // 忘记闭包
+        mousemove_closure.forget();
+
+        // 增加鼠标out事件
+        let out_context = rc_context.clone();
+        let mouseout_closure = Closure::wrap(Box::new(move |event: MouseEvent| {
+            // 获取鼠标光标的x和y坐标
+            let x = event.client_x();
+            let y = event.client_y();
+            // 为了调试，记录坐标
+            log(&format!("鼠标在: ({}, {})", x, y));
+            // 根据xy 清除对应区域的内容
+            out_context.restore();
+        }) as Box<dyn FnMut(_)>);
+        canvas.add_event_listener_with_callback(
+            "mouseout",
+            mouseout_closure.as_ref().unchecked_ref(),
+        )?;
+        mouseout_closure.forget();
         Ok(())
     }
 }
